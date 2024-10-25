@@ -28,7 +28,7 @@
   #:use-module  (gnu packages boost)
   #:use-module  (gnu packages bootstrap)
   #:use-module  (gnu packages check) 
-  #:use-module  (gnu packages commencement) ;; gcc-toolchain
+  #:use-module  (gnu packages commencement) ;; make-gcc-toolchain (but not exported)
   #:use-module  (gnu packages compression)  ;; zlib lz4
   #:use-module  (gnu packages curl) 
   #:use-module  (gnu packages databases)
@@ -834,7 +834,8 @@ as the 'native-search-paths' field."
            (properties (alist-delete 'hidden? (package-properties gcc)))
            (arguments
             (substitute-keyword-arguments (package-arguments gcc)
-                                          ((#:modules modules %gnu-build-system-modules)
+                                          (;; Deprecated (#:modules modules %gnu-build-system-modules)
+                                           (#:modules modules %default-gnu-imported-modules)
                                            `(,@modules
                                              (srfi srfi-1)
                                              (srfi srfi-26)
@@ -859,14 +860,15 @@ as the 'native-search-paths' field."
                "gfortran" '("fortran")
                %generic-search-paths)))
 
-;;; Try to make a more up-to-date gfortran package.
-(define-public gfortran-toolchain-8
-  (package (inherit (make-gcc-toolchain gfortran-8))
-    (synopsis "Complete GCC tool chain for Fortran development")
-    (description "This package provides a complete GCC tool chain for
-Fortran development to be installed in user profiles.  This includes
-gfortran, as well as libc (headers and binaries, plus debugging symbols
-in the @code{debug} output), and binutils.")))
+;;; Try to make a more up-to-date gfortran package. But make-gcc-toolchain is not exported from commencement.scm
+
+;; (define-public gfortran-toolchain-8
+;;   (package (inherit (make-gcc-toolchain gfortran-8))
+;;     (synopsis "Complete GCC tool chain for Fortran development")
+;;     (description "This package provides a complete GCC tool chain for
+;; Fortran development to be installed in user profiles.  This includes
+;; gfortran, as well as libc (headers and binaries, plus debugging symbols
+;; in the @code{debug} output), and binutils.")))
 
 (define-public TALYS-1.96
   (package

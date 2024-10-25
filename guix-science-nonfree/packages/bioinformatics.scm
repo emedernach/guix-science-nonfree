@@ -698,7 +698,7 @@ datasets (MEME-ChIP).")
     (arguments
      (list
       #:imported-modules
-      `(,@%gnu-build-system-modules
+      `(,@%default-gnu-imported-modules ;; Deprecated ,@%gnu-build-system-modules
         (guix build python-build-system))
       #:modules
       '((guix build gnu-build-system)
