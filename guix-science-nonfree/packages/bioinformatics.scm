@@ -1,5 +1,5 @@
 ;;; Copyright © 2016-2021 Roel Janssen <roel@gnu.org>
-;;; Copyright © 2015-2023 Ricardo Wurmus <ricardo.wurmus@mdc-berlin.de>
+;;; Copyright © 2015-2024 Ricardo Wurmus <ricardo.wurmus@mdc-berlin.de>
 ;;; Copyright © 2023 Navid Afkhami <navid.afkhami@mdc-berlin.de>
 ;;;
 ;;; This program is free software; you can redistribute it and/or modify it
@@ -19,9 +19,11 @@
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (guix-science-nonfree licenses)
   #:use-module (guix-science-nonfree packages cuda)
+  #:use-module (guix-science-nonfree packages mkl)
   #:use-module (gnu packages)
   #:use-module (gnu packages admin)
   #:use-module (gnu packages algebra)
+  #:use-module (gnu packages autotools)
   #:use-module (gnu packages base)
   #:use-module (gnu packages bash)
   #:use-module (gnu packages bioconductor)
@@ -51,6 +53,7 @@
   #:use-module (gnu packages python-web)
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages serialization)
+  #:use-module (gnu packages sqlite)
   #:use-module (gnu packages statistics)
   #:use-module (gnu packages swig)
   #:use-module (gnu packages web)
@@ -410,6 +413,83 @@ factor binding sites among upstream sequences from co-regulated
 genes.")
     (license (nonfree "Academic use only."))))
 
+;; This is free software but requires linking with Intel's proprietary
+;; MKL.  See https://github.com/jianyangqt/gcta/issues/77.
+(define-public gcta
+  (package
+    (name "gcta")
+    (version "1.94.1")
+    (source (origin
+              (method git-fetch)
+              (uri (git-reference
+                    (url "https://github.com/jianyangqt/gcta")
+                    (commit (string-append "v" version))
+                    (recursive? #true)))
+              (file-name (git-file-name name version))
+              (sha256
+               (base32
+                "1yb5qvfi73za02gbyiand3byimx7lyc2sgv5msxbq3s3wf3bn36d"))))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      ;; Tests have been disabled upstream:
+      ;; https://github.com/jianyangqt/gcta/blob/v1.94.1/CMakeLists.txt#L197
+      #:tests? #false
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'find-libraries
+            (lambda _
+              (setenv "EIGEN3_INCLUDE_DIR"
+                      (string-append #$(this-package-input "eigen")
+                                     "/include/eigen3"))
+              (setenv "SPECTRA_LIB"
+                      (string-append #$(this-package-input "spectra")
+                                     "/lib"))
+              (setenv "BOOST_LIB"
+                      (string-append #$(this-package-input "boost")
+                                     "/lib"))
+              (setenv "MKLROOT" #$(this-package-input "mkl"))))
+          (replace 'install
+            (lambda _
+              (install-file "gcta64"
+                            (string-append #$output "/bin")))))))
+    (inputs
+     (list boost eigen gsl mkl-2020
+           openblas spectra sqlite zlib `(,zstd "lib")))
+    (native-inputs
+     (list pkg-config))
+    ;; Only x86_64 is supported at the moment although aarch64 is
+    ;; checked for in the build system.
+    (supported-systems '("x86_64-linux"))
+    (home-page "https://yanglab.westlake.edu.cn/software/gcta/")
+    (synopsis "Tool for Genome-wide Complex Trait Analysis")
+    (description
+     "GCTA (Genome-wide Complex Trait Analysis) is a software package,
+which was initially developed to estimate the proportion of phenotypic
+variance explained by all genome-wide SNPs for a complex trait but has
+been extensively extended for many other analyses of data from
+genome-wide association studies (GWASs).")
+    (license license:gpl3)))
+
+(define-public macs-1
+  (package (inherit macs)
+    (name "macs")
+    (version "1.4.3")
+    (source (origin
+              (method url-fetch)
+              (uri (string-append
+                    "https://pypi.python.org/packages/source/M/MACS/MACS-"
+                    version ".tar.gz"))
+              (sha256
+               (base32
+                "17lbf76gkisrxhnjwf8iw4pvinny2376dp9dyrgald2l0ww6s4d9"))
+              (patches (search-patches "macs-1.4-fix-parser.patch"))))
+    (build-system python-build-system)
+    (arguments `(#:tests? #false #:python ,python-2))
+    (inputs '())
+    (native-inputs '())
+    (license artistic-1.0)))
+
 (define-public meme-4
   (package
     (name "meme")
@@ -604,7 +684,7 @@ datasets (MEME-ChIP).")
 (define-public rmats-turbo
   (package
     (name "rmats-turbo")
-    (version "4.1.2")
+    (version "4.3.0")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -613,7 +693,7 @@ datasets (MEME-ChIP).")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "02ygjng1rc3k4daw3hrg102797dlvkcisnmwlhn1qbk0m3lg8dcb"))))
+                "07nvs3il4sk8pfzyj9bl3qxn2yhwinxw2dkl6khng1s7qm6xnmrf"))))
     (build-system gnu-build-system)
     (arguments
      (list
@@ -638,7 +718,11 @@ datasets (MEME-ChIP).")
                                      "/include/bamtools:"
                                      (or (getenv "CPLUS_INCLUDE_PATH") "")))
               (substitute* "rMATS_pipeline/setup.py"
-                (("'-Wl,-static',") ""))))
+                (("'-Wl,-static',") ""))
+              (substitute* "rmats.py"
+                (("rmats_c = os.path.join.*")
+                 (string-append "rmats_c = \""
+                                #$output "/bin/rMATSexe\"\n")))))
           (add-before 'build 'chdir
             (lambda _ (chdir "rMATS_C")))
           (add-before 'install 'prepare-install
@@ -648,7 +732,31 @@ datasets (MEME-ChIP).")
               (chdir "../rMATS_pipeline")
               (invoke "python" "setup.py" "build_ext")))
           (add-after 'build-pipeline 'install-pipeline
-            (assoc-ref python:%standard-phases 'install)))))
+            (lambda _
+              (let ((share (string-append #$output "/share/rmats-turbo/")))
+                (for-each (lambda (file)
+                            (install-file file share))
+                          (find-files "build" "\\.so$")))))
+          (add-after 'install-pipeline 'install-files
+            (lambda* (#:key inputs #:allow-other-keys)
+              (chdir "..")
+              (let ((share (string-append #$output "/share/rmats-turbo/")))
+                (mkdir-p share)
+                (for-each (lambda (file) (install-file file share))
+                          (list "rmats.py" "cp_with_prefix.py"))
+                (for-each (lambda (directory)
+                            (copy-recursively directory
+                                              (string-append share "/" directory)))
+                          (list "rMATS_R" "rMATS_P"))
+                (let ((executable (string-append #$output "/bin/run_rmats")))
+                  (with-output-to-file executable
+                    (lambda ()
+                      (display (string-append "\
+#!/bin/sh
+" (search-input-file inputs "/bin/python3") " " (string-append share "rmats.py") " $@"))))
+                  (chmod executable #o555))))))))
+    (propagated-inputs
+     (list r-pairadise))
     (inputs
      (list bamtools
            gsl
@@ -671,6 +779,142 @@ differential alternative splicing events from RNA-Seq data.")
     ;; prefixed with a restriction that contradicts the license.
     (license (list license:gpl2+
                    (nonfree "Personal and academic use only.")))))
+
+(define-public r-cellalign
+  (let ((commit "30fb085bcf45280e1706450e9cfcba3728cda6d8")
+        (revision "1"))
+    (package
+      (name "r-cellalign")
+      (version (git-version "0.1.0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/shenorrLabTRDF/cellAlign")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32
+           "1v0ci71zbrmr1l2xmljdl6ks508fmhh6sdc3iglgd3cj16d0ahj6"))))
+      (properties `((upstream-name . "cellAlign")))
+      (build-system r-build-system)
+      (propagated-inputs
+       (list r-dtw
+             r-ggplot2
+             r-pheatmap
+             r-rcpp
+             r-reshape2))
+      (home-page "https://github.com/shenorrLabTRDF/cellAlign")
+      (synopsis "Global and local alignment of single cell trajectories")
+      (description
+       " CellAlign is a tool for quantitative comparison of expression
+dynamics within or between single-cell trajectories. The input to the
+CellAlign workflow is any trajectory vector that orders single cell
+expression with a pseudo-time spacing and the expression matrix for
+the cells used to define the trajectory.")
+      (license (nonfree "Commercial use is forbidden.")))))
+
+(define-public r-flowsorted-bloodextended-epic
+  (let ((commit "b32d3a069218874f0e87f84389bab62be94fe9ee")
+        (revision "1"))
+    (package
+      (name "r-flowsorted-bloodextended-epic")
+      (version (git-version "1.0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url
+                "https://github.com/immunomethylomics/FlowSorted.BloodExtended.EPIC")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "1jncfxrpdllcb1059p8lha38q6nj9c3c05znidwkjw76mnwjkiys"))))
+      (properties `((upstream-name . "FlowSorted.BloodExtended.EPIC")))
+      (build-system r-build-system)
+      (propagated-inputs (list r-experimenthub
+                               r-flowsorted-blood-epic
+                               r-genefilter
+                               r-illuminahumanmethylationepicanno-ilm10b4-hg19
+                               r-minfi
+                               r-nlme
+                               r-quadprog
+                               r-s4vectors
+                               r-summarizedexperiment))
+      (native-inputs (list r-knitr))
+      (home-page
+       "https://github.com/immunomethylomics/FlowSorted.BloodExtended.EPIC")
+      (synopsis
+       "Illumina EPIC data on extended immunomagnetic sorted blood populations")
+      (description
+       "This package provides raw data for improved blood cell
+estimation in minfi and similar packages.")
+      ;; For research purposes only
+      (license (nonfree
+                "https://github.com/immunomethylomics/FlowSorted.BloodExtended.EPIC/blob/main/LICENSE")))))
+
+(define-public r-loomr
+  (let ((commit "df0144bd2bbceca6fadef9edc1bbc5ca672d4739")
+        (revision "1"))
+    (package
+      (name "r-loomr")
+      (version (git-version "0.2.0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/mojaveazure/loomR.git")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32
+           "1b1g4dlmfdyhn56bz1mkh9ymirri43wiz7rjhs7py3y7bdw1s3yr"))))
+      (build-system r-build-system)
+      (propagated-inputs
+       (list r-r6
+             r-hdf5r
+             r-iterators
+             r-itertools
+             r-matrix))
+      (home-page "https://github.com/mojaveazure/loomR")
+      (synopsis "R interface for loom files")
+      (description "This package provides an R interface to access,
+create, and modify loom files.  loomR aims to be completely compatible
+with loompy.")
+      ;; The DESCRIPTION file says GPL-3, but according to the author
+      ;; they haven't decided an a final license yet.  For now we
+      ;; should consider it licensed under the non-free DBAD license.
+      (license (nonfree "https://dbad-license.org")))))
+
+(define-public r-louper
+  (let ((commit "526ebdf92315b419301356b61f427da61c7a1ed8")
+        (revision "1"))
+    (package
+      (name "r-louper")
+      (version (git-version "1.0.2" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/10XGenomics/loupeR")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "1dr92bd7hwvl8nk6xjxfxmgv1gfca07kmway2p8iw0707l0qvgmw"))))
+      (properties
+       `((upstream-name . "loupeR")
+         ;; See license
+         (substitutable? . #false)))
+      (build-system r-build-system)
+      (propagated-inputs (list r-hdf5r r-seurat))
+      (home-page "https://github.com/10XGenomics/loupeR")
+      (synopsis "Convert Seurat objects to 10x Genomics Loupe files")
+      (description
+       "This package converts Seurat objects to 10x Genomics Loupe
+files.")
+      ;; You agree not to redistribute or sublicense the Software,
+      ;; either in source code or object code format.
+      (license (nonfree "file://LICENSE")))))
 
 (define-public r-omixerrpm
   (let ((commit "184f1cc99aefed722e20eb00eda082348a064c4e")
@@ -1037,50 +1281,42 @@ prediction pipeline for ChIP-seq experiments.")
                 (sha256 (base32 hash))))
       (build-system ant-build-system)
       (arguments
-       `(#:tests? #f ; No test target.
-         #:phases
-         (modify-phases %standard-phases
-           (replace 'unpack
-             (lambda _
-               (mkdir "source")
-               (chdir "source")
-               (and
-                ;; Unpack the Java archive containing the source files.
-                (zero? (system* "jar" "xf" (assoc-ref %build-inputs "source")))
-                ;; Remove existing compiled output.
-                (with-directory-excursion "net/sf/varscan/"
-                  (for-each (lambda (file)
-                              (unless (string= (string-take-right file 5) ".java")
-                                (zero? (system* "rm" file))))
-                            (find-files "." #:directories? #f))))))
-           (replace 'build
-             (lambda _
-               ;; Keep a list of files to be included in the JAR.
-               (let ((out-files '("META-INF/MANIFEST.MF"))
-                     (sources-dir "net/sf/varscan/"))
-                 (and
+       (list
+        #:tests? #f ; No test target.
+        #:phases
+        #~(modify-phases %standard-phases
+            (replace 'unpack
+              (lambda* (#:key source #:allow-other-keys)
+                (mkdir "source")
+                (chdir "source")
+                (and
+                 ;; Unpack the Java archive containing the source files.
+                 (invoke "jar" "xf" source)
+                 ;; Remove existing compiled output.
+                 (with-directory-excursion "net/sf/varscan/"
+                   (for-each (lambda (file)
+                               (unless (string= (string-take-right file 5) ".java")
+                                 (delete-file file)))
+                             (find-files "." #:directories? #f))))))
+            (replace 'build
+              (lambda _
+                (let ((sources-dir "net/sf/varscan/"))
                   (with-directory-excursion sources-dir
                     (for-each
                      (lambda (file)
                        (when (string= (string-take-right file 5) ".java")
                          ;; Compile the source files.
-                         (zero? (system* "javac" file))
-                         ;; Add to list of files to be included in the JAR.
-                         (set! out-files
-                               (append
-                                out-files
-                                (list (string-append sources-dir
-                                  (string-drop-right (string-drop file 2) 5)
-                                  ".class"))))))
+                         (invoke "javac" file)))
                      (find-files "." #:directories? #f)))
                   ;; Construct the Java archive.
-                  (let ((params (append '("jar" "cfm" ,jar-file) out-files)))
-                    (zero? (apply system* params)))))))
-           (replace 'install
-             (lambda _
-               (let ((out (string-append (assoc-ref %outputs "out")
-                                         "/share/java/varscan/")))
-                 (install-file ,jar-file out)))))))
+                  (apply invoke "jar" "cfm" #$jar-file
+                         (cons "META-INF/MANIFEST.MF"
+                               (find-files sources-dir
+                                           "\\.class$"))))))
+            (replace 'install
+              (lambda _
+                (install-file #$jar-file
+                              (string-append #$output "/share/java/varscan/")))))))
       (home-page "http://dkoboldt.github.io/varscan/")
       (synopsis "Variant detection in massively parallel sequencing data")
       (description "")
@@ -1199,6 +1435,81 @@ as efficiently and effectively as possible.")
           (mkdir-p output-dir)
           (copy-file source-file
                      (string-append output-dir "/clinvar.vcf.gz"))))))))
+
+(define-public cufflinks
+  ;; This commit includes build fixes
+  (let ((commit "dc3b0cb72a4ac2b6bbc887099e71fc0c21e107b7")
+        (revision "1"))
+    (package
+      (name "cufflinks")
+      (version (git-version "2.2.1" revision commit))
+      (source (origin
+                (method git-fetch)
+                (uri (git-reference
+                      (url "https://github.com/cole-trapnell-lab/cufflinks")
+                      (commit commit)))
+                (file-name (git-file-name name version))
+                (sha256
+                 (base32
+                  "1mgmakzg4g174ry0idyzjwysssb5ak72ybk0qha8vi6raylhd3if"))))
+      (build-system gnu-build-system)
+      (arguments
+       (list
+        #:make-flags
+        #~(list
+           ;; Cufflinks must be linked with various boost libraries.
+           (string-append "BOOST_LDFLAGS=-L"
+                          #$(this-package-input "boost")
+                          "/lib"))
+        #:phases
+        '(modify-phases %standard-phases
+           (add-after 'unpack 'fix-build-system
+             (lambda _
+               (setenv "CFLAGS" "-fcommon")
+               ;; Remove duplicate AM_INIT_AUTOMAKE macro.
+               (substitute* "configure.ac"
+                 (("AM_INIT_AUTOMAKE\n") ""))
+               ;; The includes for "eigen" are located in a subdirectory.
+               (substitute* "ax_check_eigen.m4"
+                 (("ac_eigen_path/include")
+                  "ac_eigen_path/include/eigen3")))))
+        #:configure-flags
+        #~(cons* (string-append "--with-bam="
+                                #$(this-package-input "htslib"))
+                 (string-append "--with-eigen="
+                                #$(this-package-input "eigen"))
+                 (map (lambda (lib)
+                        (string-append "--with-boost-" lib "=boost_" lib))
+                      '("system"
+                        "filesystem"
+                        "serialization"
+                        "thread")))))
+      (inputs
+       (list eigen
+             htslib
+             boost-1.68              ;latest boost doesn't allow c++03
+             python-2
+             zlib))
+      (native-inputs
+       (list autoconf automake))
+      (home-page "http://cole-trapnell-lab.github.io/cufflinks/")
+      (synopsis "Transcriptome assembly and RNA-Seq expression analysis")
+      (description
+       "Cufflinks assembles RNA transcripts, estimates their abundances,
+and tests for differential expression and regulation in RNA-Seq
+samples.  It accepts aligned RNA-Seq reads and assembles the
+alignments into a parsimonious set of transcripts.  Cufflinks then
+estimates the relative abundances of these transcripts based on how
+many reads support each one, taking into account biases in library
+preparation protocols.")
+      ;; The sources include a modified third-party library "locfit"
+      ;; that is released under a license asking any use for benchmarks
+      ;; to be authorized.  A GPL version of locfit (by the same author)
+      ;; exists in the form of "r-locfit", but it cannot be used without
+      ;; modifications.
+      ;; See also https://github.com/cole-trapnell-lab/cufflinks/issues/129
+      (license (list license:boost1.0
+                     (nonfree "Not to be used for benchmarks"))))))
 
 (define-public dbsnp
   (package
@@ -1521,24 +1832,23 @@ in the human genome.")
                 "1qp05na2lb7w35nqii9gzv4clmppi3hnk5w3kzfpz5sz27fw1lym"))))
     (build-system trivial-build-system)
     (arguments
-     `(#:modules ((guix build utils))
-       #:builder
-       (begin
-         (use-modules (guix build utils))
-         (let ((source-file (assoc-ref %build-inputs "source"))
-               (output-dir (string-append %output "/share/freec"))
-               (tar (string-append (assoc-ref %build-inputs "tar") "/bin/tar"))
-               (PATH (string-append (assoc-ref %build-inputs "gzip") "/bin")))
-           (setenv "PATH" PATH)
-           (mkdir-p output-dir)
-           (with-directory-excursion output-dir
-             (system* tar "-xvf" source-file))))))
-    (inputs
-     `(("tar" ,tar)
-       ("gzip" ,gzip)))
+     (list
+      #:modules '((guix build utils))
+      #:builder
+      #~(begin
+          (use-modules (guix build utils))
+          (let ((output-dir (string-append #$output "/share/freec"))
+                (tar (string-append #$(this-package-input "tar") "/bin/tar"))
+                (PATH (string-append #$(this-package-input "gzip") "/bin")))
+            (setenv "PATH" PATH)
+            (mkdir-p output-dir)
+            (with-directory-excursion output-dir
+              (invoke tar "-xvf" #$source))))))
+    (inputs (list gzip tar))
     (home-page "http://boevalab.com/FREEC")
-    (synopsis "")
-    (description "")
+    (synopsis "Mappability track for hg19 genome")
+    (description "This package provides the mappability track for the
+hg19 human genome with 100 base pair read length.")
     ;; No license specified.
     (license (license:non-copyleft "file:///dev/null"))))
 
@@ -1692,7 +2002,7 @@ sequences with a predefined structure (inverse folding) is provided.")
                      (string-append (getcwd) "/tests:"
                                     (getenv "PERL5LIB"))))))))
     (native-inputs
-     (list swig))))
+     (list swig gcc-8))))
 
 (define-public viennarna-1.8
   (package (inherit viennarna)

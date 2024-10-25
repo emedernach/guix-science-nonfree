@@ -1,5 +1,5 @@
 ;;; GNU Guix --- Functional package management for GNU
-;;; Copyright © 2023 Ludovic Courtès <ludovic.courtes@inria.fr>
+;;; Copyright © 2023-2024 Ludovic Courtès <ludovic.courtes@inria.fr>
 ;;;
 ;;; This file is NOT part of GNU Guix, but is supposed to be used with GNU
 ;;; Guix and thus has the same license.
@@ -21,6 +21,7 @@
   #:use-module (guix)
   #:use-module (gnu packages mpi)
   #:use-module (guix-science-nonfree packages cuda)
+  #:use-module (guix-science-nonfree packages fabric-management)
   #:use-module (guix-science-nonfree packages linux))
 
 (define-public openmpi-cuda
@@ -28,15 +29,21 @@
     (inherit openmpi)
     (name "openmpi-cuda")
     (arguments
-     ;; TODO: Check whether UCX is built with gdrcopy:
-     ;; <https://www.open-mpi.org/faq/?category=buildcuda>.
      (substitute-keyword-arguments (package-arguments openmpi)
        ((#:configure-flags flags #~'())
         #~(append (list (string-append "--with-cuda="
                                        #$(this-package-input "cuda-toolkit"))
-                        "--enable-mpi-ext=cuda")
-                  #$flags))))
+                        "--enable-mpi-ext=cuda,affinity")
+
+                  ;; '--enable-mpi-ext=' must be followed by a
+                  ;; comma-separated list.
+                  (filter (lambda (flag)
+                            (not (string-prefix? "--enable-mpi-ext=" flag)))
+                          #$flags)))))
     (inputs (modify-inputs (package-inputs openmpi)
               (append cuda)
-              (replace "psm2" psm2-cuda)))
+              ;; Use UCX with CUDA support.
+              (replace "ucx" ucx-cuda)
+              (replace "psm2" psm2-cuda)
+              (replace "libfabric" libfabric-cuda)))
     (synopsis "MPI-3 implementation, with CUDA support")))
