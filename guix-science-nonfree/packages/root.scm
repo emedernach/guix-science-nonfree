@@ -1,6 +1,5 @@
-
 ;;;
-;;; Copyright © 2023 Emmanuel Medernach <Emmanuel.Medernach@iphc.cnrs.fr>
+;;; Copyright © 2023, 2024 Emmanuel Medernach <Emmanuel.Medernach@iphc.cnrs.fr>
 ;;;
 ;;; This program is free software; you can redistribute it and/or modify it
 ;;; under the terms of the GNU General Public License as published by
@@ -54,7 +53,7 @@
   )
 
 
-(define-public ROOT ;; 6.32.06
+(define-public ROOT-6.32.06
   (package
    (name "ROOT")
    (version "6.32.06")

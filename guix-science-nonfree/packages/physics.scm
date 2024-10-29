@@ -1,6 +1,5 @@
-
 ;;;
-;;; Copyright © 2023 Emmanuel Medernach <Emmanuel.Medernach@iphc.cnrs.fr>
+;;; Copyright © 2023, 2024 Emmanuel Medernach <Emmanuel.Medernach@iphc.cnrs.fr>
 ;;;
 ;;; This program is free software; you can redistribute it and/or modify it
 ;;; under the terms of the GNU General Public License as published by
@@ -17,6 +16,8 @@
 
 
 (define-module (guix-science-nonfree packages physics)
+  #:use-module  (guix-science-nonfree packages geant4)
+  #:use-module  (guix-science-nonfree packages root)
   #:use-module  ((guix licenses) #:prefix license:)
   #:use-module  (gnu packages adns)  ;; c-ares
   #:use-module  (gnu packages algebra)	 ;; FFTW
@@ -205,7 +206,7 @@
     `(#:tests? #f)) ; no tests
    (home-page "https://root.cern/root/html606/md_math_vdt_ReadMe.html")
    (synopsis "VDT")
-   (description "VDT")
+   (description "VDT is a library of mathematical functions, implemented in double and single precision. The implementation is fast and vectorisable with the aid of modern compilers. VDT exploits also Pade polynomials. A lot of ideas were inspired by the cephes math library (by Stephen L. Moshier)")
    (license license:lgpl2.1+)))
 
 
@@ -608,6 +609,7 @@ generator) is a collection of algorithms for generating non-uniform
 pseudorandom variates")
    (license license:gpl2)))
 
+
 ;; TODO (Help needed !)
 
 '(define-public cubix-3.0
@@ -819,15 +821,6 @@ experiments and other diverse scientific communities.")
     (synopsis "DIRAC")
     (description "DIRAC provides a complete solution to one or more user community requiring access to distributed resources. DIRAC builds a layer between the users and the resources offering a common interface to a number of heterogeneous providers, integrating them in a seamless manner, providing interoperability, at the same time as an optimized, transparent and reliable usage of the resources.")
     (license license:gpl3+)))
-
-'(define-public GATE
-  "http://www.opengatecollaboration.org/"
-  ;; Gate 10.1:
-  ;; - Geant 4 10.7
-  ;; - ROOT 6
-  ;; - gcc 4.8 to 7.3
-  ;; - cmake >= 3.3
-  )
 
 '(define-public gammaware-AGATAD_P2_COM_001
    (package

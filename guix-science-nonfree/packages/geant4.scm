@@ -1,4 +1,5 @@
-;;; Copyright © 2022 Emmanuel Medernach <Emmanuel.Medernach@iphc.cnrs.fr>
+;;;
+;;; Copyright © 2022, 2023, 2024 Emmanuel Medernach <Emmanuel.Medernach@iphc.cnrs.fr>
 ;;; Copyright © 2023, 2024 Jake Forster <jakecameron.forster@gmail.com>
 ;;;
 ;;; This program is free software: you can redistribute it and/or modify
@@ -265,6 +266,7 @@ and space science.
 
 This package supports visualization with OpenGL and Qt.")))
 
+
 (define-public geant4-11-2
   (package
     (inherit geant4-11-1)
@@ -284,6 +286,73 @@ This package supports visualization with OpenGL and Qt.")))
                      (replace "G4EMLOW" g4emlow-8.5)
                      (replace "G4ABLA" g4abla-3.3)
                      (replace "G4INCL" g4incl-1.2)))))
+
+
+(define-public geant4-no-multithreaded-11-2
+  (package
+   (name "geant4")
+   (version "11.2.2")
+   (source
+    (origin
+     (method git-fetch)
+     (uri (git-reference
+           (url "https://gitlab.cern.ch/geant4/geant4")
+           (commit (string-append "v" version))))
+     (file-name (git-file-name name version))
+     (sha256
+      (base32 "111v65zx09fyddnqv1d0b9x15wqhyl0548ny2ysv4x66wyrp8p9r"))))
+   (build-system cmake-build-system)
+   (arguments
+    (list
+     #:configure-flags
+     #~(list (string-append "-DCMAKE_INSTALL_PREFIX=" #$output)
+             "-DCMAKE_INSTALL_LIBDIR=lib"
+             "-DGEANT4_BUILD_MULTITHREADED=OFF"
+             "-DGEANT4_ENABLE_TESTING=OFF"
+             "-DGEANT4_INSTALL_DATA=OFF"
+             "-DGEANT4_USE_GDML=ON"
+             "-DGEANT4_USE_SYSTEM_CLHEP=ON"
+             "-DGEANT4_USE_SYSTEM_EXPAT=ON"
+             (string-append "-DGEANT4_INSTALL_DATADIR="
+                            #$output "/share/geant4/data"))
+     #:phases
+     #~(modify-phases %standard-phases
+                      (add-after 'install 'install-data
+                                 (lambda _
+                                   (let ((datadir (string-append #$output
+                                                                 "/share/geant4/data")))
+                                     (mkdir-p datadir)
+                                     (for-each
+                                      (lambda (archive)
+                                        (invoke "tar" "xvf" archive "-C" datadir))
+                                      (map cadr '#$(package-native-inputs this-package)))))))
+     #:tests? #f))
+   (inputs (list clhep-2.4.7.1 expat xerces-c)) ;xerces-c is for GDML
+   (native-inputs
+    `(("G4NDL" ,g4ndl-4.7.1)
+      ("G4EMLOW" ,g4emlow-8.5)
+      ("G4PhotonEvaporation" ,photon-evaporation-5.7)
+      ("G4RadioactiveDecay" ,radioactive-decay-5.6)
+      ("G4PARTICLEXS" ,g4particlexs-4.0)
+      ("G4PII" ,g4pii-1.3)
+      ("G4RealSurface" ,real-surface-2.2)
+      ("G4SAIDDATA" ,g4saiddata-2.0)
+      ("G4ABLA" ,g4abla-3.3)
+      ("G4INCL" ,g4incl-1.2)
+      ("G4ENSDFSTATE" ,g4ensdfstate-2.3)
+      ("G4TENDL" ,g4tendl-1.4)))
+   (home-page "https://geant4.web.cern.ch")
+   (synopsis "Monte Carlo particle track simulations")
+   (description
+    "Geant4 is a toolkit for the simulation of the passage of
+particles through matter.  Its areas of application include high
+energy, nuclear and accelerator physics, as well as studies in medical
+and space science.
+
+Note this package does not support visualization -- you
+can use @code{geant4-vis} for that.")
+   (license (nonfree:nonfree
+             "https://geant4.web.cern.ch/download/license"))))
 
 (define-public geant4-vis-11-2
   (package
